@@ -1,0 +1,17 @@
+spring:
+  r2dbc:
+    url: r2dbc:clickhouse://localhost:8123/default?compress=1
+    username: default    # optional if already in URL
+    password: password123
+
+  jooq:
+    sql-dialect: clickhouse
+  application:
+    name: olap_performance
+server:
+  port: 9090
+
+logging:
+  console:
+    enabled: true
+
