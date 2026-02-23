@@ -178,11 +178,17 @@ public class QueryBuilderService {
     }
 
     public Mono<Long> countTotal(QueryRequest request) {
+        Field<Long> hllCount =
+                DSL.function("uniqHLL12", Long.class, DSL.field("Id")).as("count");
+
         Condition condition = buildConditions(request);
-        return Mono.from(dsl.selectCount().from(DSL.table("train")).where(condition))
-                .map(record -> ((Integer) record.get(0)).longValue());
 
-
+        return Mono.from(
+                        dsl.select(hllCount)
+                                .from(DSL.table("train"))
+                                .where(condition)
+                )
+                .map(r -> r.get(hllCount));   // returns Long
     }
 
     public Flux<Record> executeQuery(QueryRequest request) {
