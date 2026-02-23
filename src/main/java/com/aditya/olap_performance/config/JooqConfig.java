@@ -18,7 +18,7 @@ public class JooqConfig {
     public ConnectionFactory connectionFactory() {
         // Build the ClickHouse ConnectionFactory manually
 
-        return ConnectionFactories.get("r2dbc:clickhouse:http://default:password123@localhost:8123/default?compress=1");
+        return ConnectionFactories.get("r2dbc:clickhouse:http://default:password123@localhost:8123/default");
     }
 
     @Bean
