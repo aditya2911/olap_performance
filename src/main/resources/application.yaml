@@ -1,13 +1,24 @@
 spring:
   r2dbc:
     url: r2dbc:clickhouse://localhost:8123/default?compress=1
-    username: default    # optional if already in URL
+    username: default
     password: password123
+    properties:
+      pool:
+        max-size: 100
+        max-idle-time: 30s
+        acquire-timeout: 30s
 
   jooq:
     sql-dialect: clickhouse
+
+  reactor:
+    netty:
+      ioWorkerCount: 64
+
   application:
     name: olap_performance
+
 server:
   port: 9090
 
