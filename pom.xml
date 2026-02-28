@@ -156,7 +156,7 @@
 					<generator>
 						<database>
 							<name>org.jooq.meta.clickhouse.ClickHouseDatabase</name>
-							<includes>train</includes>
+							<includes>transactions</includes>
 							<inputSchema>default</inputSchema>
 						</database>
 						<target>
