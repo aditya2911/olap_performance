@@ -5,6 +5,7 @@ import com.aditya.olap_performance.dto.FilterCondition;
 import com.aditya.olap_performance.dto.Filters;
 import com.aditya.olap_performance.dto.OrderBy;
 import com.aditya.olap_performance.dto.QueryRequest;
+import com.example.performance.db.tables.Transactions;
 import lombok.extern.log4j.Log4j2;
 import org.jooq.Condition;
 import org.jooq.DSLContext;
@@ -19,15 +20,12 @@ import reactor.core.publisher.Mono;
 
 import java.time.LocalDateTime;
 import java.util.*;
-import java.util.stream.Collectors;
-
-import static com.example.performance.db.tables.Train.TRAIN;
 
 @Service
 @Log4j2
 public class QueryBuilderService {
 
-    private static final Set<String> VALID_COLUMNS = new HashSet<>(Arrays.asList(
+    private static final Set<String> TRAIN_COLUMNS = new HashSet<>(Arrays.asList(
             "Id", "MSSubClass", "MSZoning", "LotFrontage", "LotArea", "Street", "Alley",
             "LotShape", "LandContour", "Utilities", "LotConfig", "LandSlope", "Neighborhood",
             "Condition1", "Condition2", "BldgType", "HouseStyle", "OverallQual", "OverallCond",
@@ -45,6 +43,23 @@ public class QueryBuilderService {
             "SaleCondition", "SalePrice"
     ));
 
+    private static final Set<String> TRANSACTION_COLUMNS = new HashSet<>(Arrays.asList(
+            "acceptorIdentification", "localDateAndTimeGMT", "status", "cardProgrammeApplied",
+            "transactionAmount", "retrievalReferenceNumber", "cardAcceptorTransactionReference",
+            "originalTransactionUniqueIdentifier", "technicalAcceptorTransactionReference",
+            "systemTraceAuditNumber", "authorisationCode", "acquirerIdentification", "pan",
+            "par", "terminalSerialNumber", "terminalIdentification", "terminalModel",
+            "terminalManufacturer", "acceptorMerchantName", "acceptorTerminalMerchantIdentifier",
+            "dataProvider", "transactionEventType", "paymentMethod", "paymentMethodType",
+            "paymentUseCase", "paymentDomain", "channel", "cardDataEntryMode",
+            "authorisationRequestAmount", "transactionGlobalAmount", "currentTransactionAmount",
+            "tipsAmount", "localDate", "localTimeZone", "utcOffset", "transactionDurationMs",
+            "authorisationDurationMs", "lastUpdateTimeGMT", "cardExpiryDate", "authorisationIndicator",
+            "onUsCardIndicator", "transactionTestIndicator", "transactionCurrency",
+            "transactionCurrencyCode", "authorisationRequestCurrency", "authorisationRequestCurrencyCode",
+            "merchantReceipt", "customerReceipt", "events"
+    ));
+
     private static final Set<String> VALID_OPERATORS = Set.of(
             "eq", "neq", "gt", "lt", "like", "in"
     );
@@ -55,24 +70,29 @@ public class QueryBuilderService {
         this.dsl = dsl;
     }
 
-    public void validateQueryRequest(QueryRequest request) {
+    public void validateQueryRequest(QueryRequest request, String tableName) {
+        Set<String> validColumns = getValidColumns(tableName);
+        
         if (request.getFilters() != null && request.getFilters().getAnd() != null) {
             for (FilterCondition filter : request.getFilters().getAnd()) {
-                validateFilterField(filter.getField());
+                validateFilterField(filter.getField(), validColumns);
                 validateOperator(filter.getOp());
                 validateFilterValue(filter);
             }
         }
 
         if (request.getOrderBy() != null) {
-            validateFilterField(request.getOrderBy().getField());
+            validateFilterField(request.getOrderBy().getField(), validColumns);
         }
     }
 
-    private void validateFilterField(String field) {
-        String normalizedField = normalizeFieldName(field);
-        if (!VALID_COLUMNS.contains(normalizedField)) {
-            throw new IllegalArgumentException("Invalid field: " + field + ". Valid fields are: " + VALID_COLUMNS);
+    private Set<String> getValidColumns(String tableName) {
+        return "transactions".equalsIgnoreCase(tableName) ? TRANSACTION_COLUMNS : TRAIN_COLUMNS;
+    }
+
+    private void validateFilterField(String field, Set<String> validColumns) {
+        if (!validColumns.contains(field)) {
+            throw new IllegalArgumentException("Invalid field: " + field + ". Valid fields are: " + validColumns);
         }
     }
 
@@ -97,19 +117,12 @@ public class QueryBuilderService {
         }
     }
 
-    private String normalizeFieldName(String field) {
-        if (field == null) {
-            return null;
-        }
-        return field.substring(0, 1).toUpperCase() + field.substring(1);
-    }
-
     @SuppressWarnings("unchecked")
-    public Condition buildConditions(QueryRequest request) {
+    public Condition buildConditions(QueryRequest request, String tableName) {
         Condition condition = null;
 
         if (request.getDateRange() != null) {
-            Condition dateCondition = buildDateRangeCondition(request.getDateRange());
+            Condition dateCondition = buildDateRangeCondition(request.getDateRange(), tableName);
             condition = condition != null ? condition.and(dateCondition) : dateCondition;
         }
 
@@ -123,31 +136,35 @@ public class QueryBuilderService {
         return condition;
     }
 
-    private Condition buildDateRangeCondition(DateRange dateRange) {
+    private Condition buildDateRangeCondition(DateRange dateRange, String tableName) {
         LocalDateTime start = dateRange.getStart();
         LocalDateTime end = dateRange.getEnd();
 
-        int startYear = start.getYear();
-        int startMonth = start.getMonthValue();
-        int endYear = end.getYear();
-        int endMonth = end.getMonthValue();
+        if ("transactions".equalsIgnoreCase(tableName)) {
+            Field<LocalDateTime> dateField = DSL.field(DSL.name("localDateAndTimeGMT"), LocalDateTime.class);
+            return dateField.ge(start).and(dateField.le(end));
+        } else {
+            int startYear = start.getYear();
+            int startMonth = start.getMonthValue();
+            int endYear = end.getYear();
+            int endMonth = end.getMonthValue();
 
-        Field<Integer> yrSoldField = DSL.field(DSL.name("YrSold"), Integer.class);
-        Field<Integer> moSoldField = DSL.field(DSL.name("MoSold"), Integer.class);
+            Field<Integer> yrSoldField = DSL.field(DSL.name("YrSold"), Integer.class);
+            Field<Integer> moSoldField = DSL.field(DSL.name("MoSold"), Integer.class);
 
-        Condition startCondition = yrSoldField.gt(startYear)
-                .or(yrSoldField.eq(startYear).and(moSoldField.ge(startMonth)));
+            Condition startCondition = yrSoldField.gt(startYear)
+                    .or(yrSoldField.eq(startYear).and(moSoldField.ge(startMonth)));
 
-        Condition endCondition = yrSoldField.lt(endYear)
-                .or(yrSoldField.eq(endYear).and(moSoldField.le(endMonth)));
+            Condition endCondition = yrSoldField.lt(endYear)
+                    .or(yrSoldField.eq(endYear).and(moSoldField.le(endMonth)));
 
-        return startCondition.and(endCondition);
+            return startCondition.and(endCondition);
+        }
     }
 
     @SuppressWarnings("unchecked")
     private Condition buildFilterCondition(FilterCondition filter) {
-        String fieldName = normalizeFieldName(filter.getField());
-        Field<Object> field = DSL.field(DSL.name(fieldName), Object.class);
+        Field<Object> field = DSL.field(DSL.name(filter.getField()), Object.class);
         String op = filter.getOp().toLowerCase();
         Object value = filter.getValue();
 
@@ -170,30 +187,20 @@ public class QueryBuilderService {
             return List.of();
         }
 
-        String fieldName = normalizeFieldName(request.getOrderBy().getField());
-        Field<Object> field = DSL.field(DSL.name(fieldName), Object.class);
+        Field<Object> field = DSL.field(DSL.name(request.getOrderBy().getField()), Object.class);
         boolean isDesc = "DESC".equalsIgnoreCase(request.getOrderBy().getDirection());
 
         return isDesc ? List.of(field.desc()) : List.of(field.asc());
     }
 
-    public Mono<Long> countTotal(QueryRequest request) {
-        Field<Long> hllCount =
-                DSL.function("uniqHLL12", Long.class, DSL.field("Id")).as("count");
-
-        Condition condition = buildConditions(request);
-
-        return Mono.from(
-                        dsl.select(hllCount)
-                                .from(DSL.table("train"))
-                                .where(condition)
-                )
-                .map(r -> r.get(hllCount));   // returns Long
+    public Mono<Long> countTotal(QueryRequest request, String tableName) {
+      //  Condition condition = buildConditions(request, tableName);
+        return Mono.just(0L);
     }
 
-    public Flux<Record> executeQuery(QueryRequest request) {
-        Condition condition = buildConditions(request);
-        return Flux.from(dsl.selectFrom(TRAIN)
+    public Flux<Record> executeQuery(QueryRequest request, String tableName) {
+        Condition condition = buildConditions(request, tableName);
+        return Flux.from(dsl.selectFrom(Transactions.TRANSACTIONS)
                 .where(condition)
                 .orderBy(buildOrderBy(request))
                 .limit(request.getLimit())
